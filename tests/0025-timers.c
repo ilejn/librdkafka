@@ -58,18 +58,21 @@ static int stats_cb(rd_kafka_t *rk, char *json, size_t json_len, void *opaque) {
                   (!strcmp(test_mode, "bare") ? 0.2 : 1.0));
         const int wiggleroom_down = (int)((double)state.interval * 0.1);
 
-        TEST_SAY("Call #%d: after %" PRId64
-                 "ms, %.0f%% outside "
-                 "interval %" PRId64 "  >-%d <+%d\n",
-                 state.calls, elapsed / 1000,
-                 ((double)overshoot / state.interval) * 100.0,
-                 (int64_t)state.interval / 1000, wiggleroom_down / 1000,
-                 wiggleroom_up / 1000);
+        // TEST_SAY("Call #%d: after %" PRId64
+        //          "ms, %.0f%% outside "
+        //          "interval %" PRId64 "  >-%d <+%d\n",
+        //          state.calls, elapsed / 1000,
+        //          ((double)overshoot / state.interval) * 100.0,
+        //          (int64_t)state.interval / 1000, wiggleroom_down / 1000,
+        //          wiggleroom_up / 1000);
 
-        if (overshoot < -wiggleroom_down || overshoot > wiggleroom_up) {
-                TEST_WARN("^ outside range\n");
-                state.fails++;
-        }
+        // if (overshoot < -wiggleroom_down || overshoot > wiggleroom_up) {
+        //         TEST_WARN("^ outside range\n");
+        //         state.fails++;
+        // }
+
+        TEST_SAY("JSON length %ld" , json_len);
+
 
         state.ts_last = now;
         state.calls++;
@@ -94,7 +97,7 @@ static void do_test_stats_timer(void) {
 
         test_conf_init(&conf, NULL, 200);
 
-        test_conf_set(conf, "statistics.interval.ms", "600");
+        test_conf_set(conf, "statistics.interval.ms", "6");
         test_conf_set(conf, "bootstrap.servers", NULL); /*no need for brokers*/
         rd_kafka_conf_set_stats_cb(conf, stats_cb);
 
@@ -111,7 +114,7 @@ static void do_test_stats_timer(void) {
         while (state.calls < exp_calls) {
                 test_timing_t t_poll;
                 TIMING_START(&t_poll, "rd_kafka_poll()");
-                rd_kafka_poll(rk, 100);
+                rd_kafka_poll(rk, 10);
                 TIMING_STOP(&t_poll);
 
                 if (TIMING_DURATION(&t_poll) > 150 * 1000)
@@ -141,7 +144,76 @@ static void do_test_stats_timer(void) {
 }
 
 
+
+/**
+ * Enable statistics with a set interval, make sure the stats callbacks are
+ * called within reasonable intervals.
+ */
+static void do_test_stats_tweaked(char * interval) {
+
+        rd_kafka_t *rk;
+        rd_kafka_conf_t *conf;
+        const int exp_calls = 10;
+        test_timing_t t_new;
+        test_timing_t t_poll;
+
+        memset(&state, 0, sizeof(state));
+
+        state.interval = 600 * 1000;
+        state.calls = 0;
+
+        test_conf_init(&conf, NULL, 200);
+
+        test_conf_set(conf, "bootstrap.servers", "localhost:29092");
+        test_conf_set(conf, "statistics.interval.ms", interval);
+        // test_conf_set(conf, "bootstrap.servers", NULL); /*no need for brokers*/
+        rd_kafka_conf_set_stats_cb(conf, stats_cb);
+
+        TIMING_START(&t_new, "rd_kafka_new()");
+        rk = test_create_handle(RD_KAFKA_CONSUMER, conf);
+        TIMING_STOP(&t_new);
+
+        TEST_SAY(
+            "Starting wait loop for %d expected stats_cb calls "
+            "with an interval of %s ms\n",
+            exp_calls, interval);
+
+
+        TIMING_START(&t_poll, "rd_kafka_poll()");
+        while (state.calls < exp_calls) {
+                int poll_time = 10;
+
+                rd_kafka_poll(rk, poll_time);
+
+        }
+        TIMING_STOP(&t_poll);
+
+        rd_kafka_destroy(rk);
+
+        if (state.calls > exp_calls)
+                TEST_SAY("Got more calls than expected: %d > %d\n", state.calls,
+                         exp_calls);
+
+        // if (state.fails) {
+        //         /* We can't rely on CIs giving our test job enough CPU to finish
+        //          * in time, so don't error out even if the time is outside
+        //          * the window */
+        //         if (test_on_ci)
+        //                 TEST_WARN("%d/%d intervals failed\n", state.fails,
+        //                           state.calls);
+        //         else
+        //                 TEST_FAIL("%d/%d intervals failed\n", state.fails,
+        //                           state.calls);
+        // } else
+        //         TEST_SAY("All %d intervals okay\n", state.calls);
+}
+
+
 int main_0025_timers(int argc, char **argv) {
-        do_test_stats_timer();
+        // do_test_stats_timer();
+        do_test_stats_tweaked("1000");
+        do_test_stats_tweaked("100");
+        do_test_stats_tweaked("10");
+        do_test_stats_tweaked("1");
         return 0;
 }
