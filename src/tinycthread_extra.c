@@ -35,6 +35,9 @@
 #include "rdtime.h"
 #include "tinycthread.h"
 
+#if HAVE_PTHREAD_SETNAME_FREEBSD
+#include <pthread_np.h>
+#endif
 
 int thrd_setname(const char *name) {
 #if HAVE_PTHREAD_SETNAME_GNU
